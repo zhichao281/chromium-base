@@ -5,47 +5,45 @@
 #ifndef BASE_FILE_VERSION_INFO_MAC_H_
 #define BASE_FILE_VERSION_INFO_MAC_H_
 
+#include <CoreFoundation/CoreFoundation.h>
 #include <string>
 
 #include "base/file_version_info.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/macros.h"
 
-#ifdef __OBJC__
 @class NSBundle;
-#else
-class NSBundle;
-#endif
 
 class FileVersionInfoMac : public FileVersionInfo {
  public:
   explicit FileVersionInfoMac(NSBundle *bundle);
-  virtual ~FileVersionInfoMac();
+  ~FileVersionInfoMac() override;
 
   // Accessors to the different version properties.
   // Returns an empty string if the property is not found.
-  virtual string16 company_name() OVERRIDE;
-  virtual string16 company_short_name() OVERRIDE;
-  virtual string16 product_name() OVERRIDE;
-  virtual string16 product_short_name() OVERRIDE;
-  virtual string16 internal_name() OVERRIDE;
-  virtual string16 product_version() OVERRIDE;
-  virtual string16 private_build() OVERRIDE;
-  virtual string16 special_build() OVERRIDE;
-  virtual string16 comments() OVERRIDE;
-  virtual string16 original_filename() OVERRIDE;
-  virtual string16 file_description() OVERRIDE;
-  virtual string16 file_version() OVERRIDE;
-  virtual string16 legal_copyright() OVERRIDE;
-  virtual string16 legal_trademarks() OVERRIDE;
-  virtual string16 last_change() OVERRIDE;
-  virtual bool is_official_build() OVERRIDE;
+  base::string16 company_name() override;
+  base::string16 company_short_name() override;
+  base::string16 product_name() override;
+  base::string16 product_short_name() override;
+  base::string16 internal_name() override;
+  base::string16 product_version() override;
+  base::string16 private_build() override;
+  base::string16 special_build() override;
+  base::string16 comments() override;
+  base::string16 original_filename() override;
+  base::string16 file_description() override;
+  base::string16 file_version() override;
+  base::string16 legal_copyright() override;
+  base::string16 legal_trademarks() override;
+  base::string16 last_change() override;
+  bool is_official_build() override;
 
  private:
-  // Returns a string16 value for a property name.
+  // Returns a base::string16 value for a property name.
   // Returns the empty string if the property does not exist.
-  string16 GetString16Value(CFStringRef name);
+  base::string16 GetString16Value(CFStringRef name);
 
-  scoped_nsobject<NSBundle> bundle_;
+  base::scoped_nsobject<NSBundle> bundle_;
 
   DISALLOW_COPY_AND_ASSIGN(FileVersionInfoMac);
 };

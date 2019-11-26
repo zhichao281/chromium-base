@@ -1,23 +1,28 @@
-﻿// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_LOGGING_WIN_H_
 #define BASE_LOGGING_WIN_H_
 
+#include <stddef.h>
+
 #include <string>
 
 #include "base/base_export.h"
-#include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/macros.h"
+#include "base/win/event_trace_provider.h"
 
+namespace base {
 template <typename Type>
 struct StaticMemorySingletonTraits;
+}  // namespace base
 
 namespace logging {
 
 // Event ID for the log messages we generate.
-BASE_EXPORT extern const GUID kLogEventId;
+EXTERN_C BASE_EXPORT const GUID kLogEventId;
 
 // Feature enable mask for LogEventProvider.
 enum LogEnableMask {
@@ -60,8 +65,8 @@ class BASE_EXPORT LogEventProvider : public base::win::EtwTraceProvider {
 
  protected:
   // Overridden to manipulate the log level on ETW control callbacks.
-  virtual void OnEventsEnabled();
-  virtual void OnEventsDisabled();
+  void OnEventsEnabled() override;
+  void OnEventsDisabled() override;
 
  private:
   LogEventProvider();
@@ -70,7 +75,7 @@ class BASE_EXPORT LogEventProvider : public base::win::EtwTraceProvider {
   // restored in OnEventsDisabled.
   logging::LogSeverity old_log_level_;
 
-  friend struct StaticMemorySingletonTraits<LogEventProvider>;
+  friend struct base::StaticMemorySingletonTraits<LogEventProvider>;
   DISALLOW_COPY_AND_ASSIGN(LogEventProvider);
 };
 

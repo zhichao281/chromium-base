@@ -5,29 +5,21 @@
 #ifndef BASE_MAC_MAC_UTIL_H_
 #define BASE_MAC_MAC_UTIL_H_
 
-#include <AvailabilityMacros.h>
-#include <Carbon/Carbon.h>
+#include <stdint.h>
 #include <string>
 
+#import <CoreGraphics/CoreGraphics.h>
+
 #include "base/base_export.h"
-#include "base/logging.h"
 
-// TODO(rohitrao): Clean up sites that include mac_util.h and remove this line.
-#include "base/mac/foundation_util.h"
-
-#if defined(__OBJC__)
-#import <Foundation/Foundation.h>
-#else  // __OBJC__
-class NSImage;
-#endif  // __OBJC__
+namespace base {
 
 class FilePath;
 
-namespace base {
 namespace mac {
 
 // Full screen modes, in increasing order of priority.  More permissive modes
-// take predecence.
+// take precedence.
 enum FullScreenMode {
   kFullScreenModeHideAll = 0,
   kFullScreenModeHideDock = 1,
@@ -39,12 +31,13 @@ enum FullScreenMode {
   kFullScreenModeNormal = 10,
 };
 
-BASE_EXPORT std::string PathFromFSRef(const FSRef& ref);
-BASE_EXPORT bool FSRefFromPath(const std::string& path, FSRef* ref);
-
 // Returns an sRGB color space.  The return value is a static value; do not
 // release it!
 BASE_EXPORT CGColorSpaceRef GetSRGBColorSpace();
+
+// Returns the generic RGB color space. The return value is a static value; do
+// not release it!
+BASE_EXPORT CGColorSpaceRef GetGenericRGBColorSpace();
 
 // Returns the color space being used by the main display.  The return value
 // is a static value; do not release it!
@@ -70,32 +63,12 @@ BASE_EXPORT void ReleaseFullScreen(FullScreenMode mode);
 BASE_EXPORT void SwitchFullScreenModes(FullScreenMode from_mode,
                                        FullScreenMode to_mode);
 
-// Set the visibility of the cursor.
-BASE_EXPORT void SetCursorVisibility(bool visible);
+// Returns true if the file at |file_path| is excluded from Time Machine
+// backups.
+BASE_EXPORT bool GetFileBackupExclusion(const FilePath& file_path);
 
-// Should windows miniaturize on a double-click (on the title bar)?
-BASE_EXPORT bool ShouldWindowsMiniaturizeOnDoubleClick();
-
-// Activates the process with the given PID.
-BASE_EXPORT void ActivateProcess(pid_t pid);
-
-// Returns true if this process is in the foreground, meaning that it's the
-// frontmost process, the one whose menu bar is shown at the top of the main
-// display.
-BASE_EXPORT bool AmIForeground();
-
-// Excludes the file given by |file_path| from being backed up by Time Machine.
+// Excludes the file given by |file_path| from Time Machine backups.
 BASE_EXPORT bool SetFileBackupExclusion(const FilePath& file_path);
-
-// Sets the process name as displayed in Activity Monitor to process_name.
-BASE_EXPORT void SetProcessName(CFStringRef process_name);
-
-// Converts a NSImage to a CGImageRef.  Normally, the system frameworks can do
-// this fine, especially on 10.6.  On 10.5, however, CGImage cannot handle
-// converting a PDF-backed NSImage into a CGImageRef.  This function will
-// rasterize the PDF into a bitmap CGImage.  The caller is responsible for
-// releasing the return value.
-BASE_EXPORT CGImageRef CopyNSImageToCGImage(NSImage* image);
 
 // Checks if the current application is set as a Login Item, so it will launch
 // on Login. If a non-NULL pointer to is_hidden is passed, the Login Item also
@@ -118,66 +91,92 @@ BASE_EXPORT void RemoveFromLoginItems();
 BASE_EXPORT bool WasLaunchedAsLoginOrResumeItem();
 
 // Returns true if the current process was automatically launched as a
+// 'Login Item' or via Resume, and the 'Reopen windows when logging back in'
+// checkbox was selected by the user.  This indicates that the previous
+// session should be restored.
+BASE_EXPORT bool WasLaunchedAsLoginItemRestoreState();
+
+// Returns true if the current process was automatically launched as a
 // 'Login Item' with 'hide on startup' flag. Used to suppress opening windows.
 BASE_EXPORT bool WasLaunchedAsHiddenLoginItem();
 
-// Run-time OS version checks. Use these instead of
-// base::SysInfo::OperatingSystemVersionNumbers. Prefer the "OrEarlier" and
-// "OrLater" variants to those that check for a specific version, unless you
-// know for sure that you need to check for a specific version.
+// Remove the quarantine xattr from the given file. Returns false if there was
+// an error, or true otherwise.
+BASE_EXPORT bool RemoveQuarantineAttribute(const FilePath& file_path);
 
-// Snow Leopard is Mac OS X 10.6, Darwin 10.
-BASE_EXPORT bool IsOSSnowLeopard();
+namespace internal {
 
-// Lion is Mac OS X 10.7, Darwin 11.
-BASE_EXPORT bool IsOSLion();
-BASE_EXPORT bool IsOSLionOrEarlier();
-BASE_EXPORT bool IsOSLionOrLater();
+// Returns the system's Mac OS X minor version. This is the |y| value
+// in 10.y or 10.y.z.
+BASE_EXPORT int MacOSXMinorVersion();
 
-// Mountain Lion is Mac OS X 10.8, Darwin 12.
-BASE_EXPORT bool IsOSMountainLion();
-BASE_EXPORT bool IsOSMountainLionOrLater();
+}  // namespace internal
+
+// Run-time OS version checks. Prefer @available in Objective-C files. If that
+// is not possible, use these functions instead of
+// base::SysInfo::OperatingSystemVersionNumbers. Prefer the "AtLeast" and
+// "AtMost" variants to those that check for a specific version, unless you know
+// for sure that you need to check for a specific version.
+
+#define DEFINE_IS_OS_FUNCS_CR_MIN_REQUIRED(V, TEST_DEPLOYMENT_TARGET) \
+  inline bool IsOS10_##V() {                                          \
+    TEST_DEPLOYMENT_TARGET(>, V, false)                               \
+    return internal::MacOSXMinorVersion() == V;                       \
+  }                                                                   \
+  inline bool IsAtMostOS10_##V() {                                    \
+    TEST_DEPLOYMENT_TARGET(>, V, false)                               \
+    return internal::MacOSXMinorVersion() <= V;                       \
+  }
+
+#define DEFINE_IS_OS_FUNCS(V, TEST_DEPLOYMENT_TARGET)           \
+  DEFINE_IS_OS_FUNCS_CR_MIN_REQUIRED(V, TEST_DEPLOYMENT_TARGET) \
+  inline bool IsAtLeastOS10_##V() {                             \
+    TEST_DEPLOYMENT_TARGET(>=, V, true)                         \
+    return internal::MacOSXMinorVersion() >= V;                 \
+  }
+
+#define TEST_DEPLOYMENT_TARGET(OP, V, RET)                      \
+  if (MAC_OS_X_VERSION_MIN_REQUIRED OP MAC_OS_X_VERSION_10_##V) \
+    return RET;
+#define IGNORE_DEPLOYMENT_TARGET(OP, V, RET)
+
+// Notes:
+// - When bumping the minimum version of the macOS required by Chromium, remove
+//   lines from below corresponding to versions of the macOS no longer
+//   supported. Ensure that the minimum supported version uses the
+//   DEFINE_IS_OS_FUNCS_CR_MIN_REQUIRED macro.
+// - When bumping the minimum version of the macOS SDK required to build
+//   Chromium, remove the #ifdef that switches between TEST_DEPLOYMENT_TARGET
+//   and IGNORE_DEPLOYMENT_TARGET.
+
+DEFINE_IS_OS_FUNCS_CR_MIN_REQUIRED(10, TEST_DEPLOYMENT_TARGET)
+DEFINE_IS_OS_FUNCS(11, TEST_DEPLOYMENT_TARGET)
+DEFINE_IS_OS_FUNCS(12, TEST_DEPLOYMENT_TARGET)
+DEFINE_IS_OS_FUNCS(13, TEST_DEPLOYMENT_TARGET)
+
+#ifdef MAC_OS_X_VERSION_10_14
+DEFINE_IS_OS_FUNCS(14, TEST_DEPLOYMENT_TARGET)
+#else
+DEFINE_IS_OS_FUNCS(14, IGNORE_DEPLOYMENT_TARGET)
+#endif
+
+#ifdef MAC_OS_X_VERSION_10_15
+DEFINE_IS_OS_FUNCS(15, TEST_DEPLOYMENT_TARGET)
+#else
+DEFINE_IS_OS_FUNCS(15, IGNORE_DEPLOYMENT_TARGET)
+#endif
+
+#undef IGNORE_DEPLOYMENT_TARGET
+#undef TEST_DEPLOYMENT_TARGET
+#undef DEFINE_IS_OS_FUNCS_CR_MIN_REQUIRED
+#undef DEFINE_IS_OS_FUNCS
 
 // This should be infrequently used. It only makes sense to use this to avoid
 // codepaths that are very likely to break on future (unreleased, untested,
-// unborn) OS releases.
-BASE_EXPORT
-    bool IsOSDangerouslyLaterThanMountainLionForUseByCFAllocatorReplacement();
-
-// When the deployment target is set, the code produced cannot run on earlier
-// OS releases. That enables some of the IsOS* family to be implemented as
-// constant-value inline functions. The MAC_OS_X_VERSION_MIN_REQUIRED macro
-// contains the value of the deployment target.
-
-#if defined(MAC_OS_X_VERSION_10_7) && \
-    MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7
-#define BASE_MAC_MAC_UTIL_H_INLINED_GE_10_7
-inline bool IsOSSnowLeopard() { return false; }
-inline bool IsOSLionOrLater() { return true; }
-#endif
-
-#if defined(MAC_OS_X_VERSION_10_7) && \
-    MAC_OS_X_VERSION_MIN_REQUIRED > MAC_OS_X_VERSION_10_7
-#define BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7
-inline bool IsOSLion() { return false; }
-inline bool IsOSLionOrEarlier() { return false; }
-#endif
-
-#if defined(MAC_OS_X_VERSION_10_8) && \
-    MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_8
-#define BASE_MAC_MAC_UTIL_H_INLINED_GE_10_8
-inline bool IsOSMountainLionOrLater() { return true; }
-#endif
-
-#if defined(MAC_OS_X_VERSION_10_8) && \
-    MAC_OS_X_VERSION_MIN_REQUIRED > MAC_OS_X_VERSION_10_8
-#define BASE_MAC_MAC_UTIL_H_INLINED_GT_10_8
-inline bool IsOSMountainLion() { return false; }
-inline bool IsOSDangerouslyLaterThanMountainLionForUseByCFAllocatorReplacement()
-{
-  return true;
+// unborn) OS releases, or to log when the OS is newer than any known version.
+inline bool IsOSLaterThan10_15_DontCallThis() {
+  return !IsAtMostOS10_15();
 }
-#endif
 
 // Retrieve the system's model identifier string from the IOKit registry:
 // for example, "MacPro4,1", "MacBookPro6,1". Returns empty string upon
@@ -188,8 +187,16 @@ BASE_EXPORT std::string GetModelIdentifier();
 // If any error occurs, none of the input pointers are touched.
 BASE_EXPORT bool ParseModelIdentifier(const std::string& ident,
                                       std::string* type,
-                                      int32* major,
-                                      int32* minor);
+                                      int32_t* major,
+                                      int32_t* minor);
+
+// Returns an OS name + version string. e.g.:
+//
+//   "macOS Version 10.14.3 (Build 18D109)"
+//
+// Parts of this string change based on OS locale, so it's only useful for
+// displaying to the user.
+BASE_EXPORT std::string GetOSDisplayName();
 
 }  // namespace mac
 }  // namespace base

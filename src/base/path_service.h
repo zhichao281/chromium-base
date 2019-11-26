@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,13 @@
 
 #include "base/base_export.h"
 #include "base/base_paths.h"
+#include "base/gtest_prod_util.h"
 #include "build/build_config.h"
 
+namespace base {
+
 class FilePath;
+class ScopedPathOverride;
 
 // The path service is a global table mapping keys to file system paths.  It is
 // OK to use this service from multiple threads.
@@ -37,13 +41,23 @@ class BASE_EXPORT PathService {
   //
   // WARNING: Consumers of PathService::Get may expect paths to be constant
   // over the lifetime of the app, so this method should be used with caution.
+  //
+  // Unit tests generally should use ScopedPathOverride instead. Overrides from
+  // one test should not carry over to another.
   static bool Override(int key, const FilePath& path);
 
-  // This function does the same as PathService::Override but it takes an extra
-  // parameter |create| which guides whether the directory to be overriden must
+  // This function does the same as PathService::Override but it takes extra
+  // parameters:
+  // - |is_absolute| indicates that |path| has already been expanded into an
+  // absolute path, otherwise MakeAbsoluteFilePath() will be used. This is
+  // useful to override paths that may not exist yet, since MakeAbsoluteFilePath
+  // fails for those. Note that MakeAbsoluteFilePath also expands symbolic
+  // links, even if path.IsAbsolute() is already true.
+  // - |create| guides whether the directory to be overriden must
   // be created in case it doesn't exist already.
   static bool OverrideAndCreateIfNeeded(int key,
                                         const FilePath& path,
+                                        bool is_absolute,
                                         bool create);
 
   // To extend the set of supported keys, you can register a path provider,
@@ -62,11 +76,19 @@ class BASE_EXPORT PathService {
                                int key_start,
                                int key_end);
 
+  // Disable internal cache.
+  static void DisableCache();
+
  private:
+  friend class ScopedPathOverride;
+  FRIEND_TEST_ALL_PREFIXES(PathServiceTest, RemoveOverride);
+
   // Removes an override for a special directory or file. Returns true if there
   // was an override to remove or false if none was present.
   // NOTE: This function is intended to be used by tests only!
   static bool RemoveOverride(int key);
 };
+
+}  // namespace base
 
 #endif  // BASE_PATH_SERVICE_H_

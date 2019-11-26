@@ -7,9 +7,10 @@
 
 #include <windows.h>
 #include <oleauto.h>
+#include <stdint.h>
 
 #include "base/base_export.h"
-#include "base/basictypes.h"
+#include "base/macros.h"
 
 namespace base {
 namespace win {
@@ -41,6 +42,7 @@ class BASE_EXPORT ScopedVariant {
 
   // Creates a new integral type variant and assigns the value to
   // VARIANT.lVal (32 bit sized field).
+  // NOTE: VT_BOOL constructs here as VARIANT.boolVal.
   explicit ScopedVariant(int value, VARTYPE vt = VT_I4);
 
   // Creates a new double-precision type variant.  |vt| must be either VT_R8
@@ -58,6 +60,9 @@ class BASE_EXPORT ScopedVariant {
 
   // Copies the variant.
   explicit ScopedVariant(const VARIANT& var);
+
+  // Moves the wrapped variant into another ScopedVariant.
+  ScopedVariant(ScopedVariant&& var);
 
   ~ScopedVariant();
 
@@ -90,14 +95,14 @@ class BASE_EXPORT ScopedVariant {
   void Set(const wchar_t* str);
 
   // Setters for simple types.
-  void Set(int8 i8);
-  void Set(uint8 ui8);
-  void Set(int16 i16);
-  void Set(uint16 ui16);
-  void Set(int32 i32);
-  void Set(uint32 ui32);
-  void Set(int64 i64);
-  void Set(uint64 ui64);
+  void Set(int8_t i8);
+  void Set(uint8_t ui8);
+  void Set(int16_t i16);
+  void Set(uint16_t ui16);
+  void Set(int32_t i32);
+  void Set(uint32_t ui32);
+  void Set(int64_t i64);
+  void Set(uint64_t ui64);
   void Set(float r32);
   void Set(double r64);
   void Set(bool b);
@@ -122,12 +127,14 @@ class BASE_EXPORT ScopedVariant {
   // This support is necessary for the V_XYZ (e.g. V_BSTR) set of macros to
   // work properly but still doesn't allow modifications since we want control
   // over that.
-  const VARIANT* operator&() const {
-    return &var_;
-  }
+  const VARIANT* ptr() const { return &var_; }
 
-  // Like other scoped classes (e.g scoped_refptr, ScopedComPtr, ScopedBstr)
-  // we support the assignment operator for the type we wrap.
+  // Moves the ScopedVariant to another instance.
+  ScopedVariant& operator=(ScopedVariant&& var);
+
+  // Like other scoped classes (e.g. scoped_refptr, ScopedBstr,
+  // Microsoft::WRL::ComPtr) we support the assignment operator for the type we
+  // wrap.
   ScopedVariant& operator=(const VARIANT& var);
 
   // A hack to pass a pointer to the variant where the accepting
@@ -161,6 +168,6 @@ class BASE_EXPORT ScopedVariant {
 };
 
 }  // namespace win
-}  // namesoace base
+}  // namespace base
 
 #endif  // BASE_WIN_SCOPED_VARIANT_H_

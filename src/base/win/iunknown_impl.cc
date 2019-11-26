@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,19 +7,20 @@
 namespace base {
 namespace win {
 
-IUnknownImpl::IUnknownImpl() {
+IUnknownImpl::IUnknownImpl()
+    : ref_count_(0) {
 }
 
 IUnknownImpl::~IUnknownImpl() {
 }
 
 ULONG STDMETHODCALLTYPE IUnknownImpl::AddRef() {
-  ref_count_.fetch_add(1);
+  ref_count_.Increment();
   return 1;
 }
 
 ULONG STDMETHODCALLTYPE IUnknownImpl::Release() {
-  if (!(ref_count_.fetch_add(-1, std::memory_order_consume) != 0)) {
+  if (!ref_count_.Decrement()) {
     delete this;
     return 0;
   }

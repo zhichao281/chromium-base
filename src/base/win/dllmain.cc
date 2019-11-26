@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,6 @@
 #include "base/compiler_specific.h"
 #include "base/win/win_util.h"
 
-#pragma warning(disable:4251)
 // Indicate if another service is scanning the callbacks.  When this becomes
 // set to true, then DllMain() will stop supporting the callback service. This
 // value is set to true the first time any of our callbacks are called, as that
@@ -55,9 +54,9 @@ static void NTAPI on_callback(PVOID h, DWORD reason, PVOID reserved);
 
 #endif  // _WIN64
 
-// Explicitly depend on tlssup.cc variable to bracket the list of TLS callbacks.
-extern "C" PIMAGE_TLS_CALLBACK __xl_a;
-extern "C" PIMAGE_TLS_CALLBACK __xl_z;
+// Explicitly depend on VC\crt\src\tlssup.c variables
+// to bracket the list of TLS callbacks.
+extern "C" PIMAGE_TLS_CALLBACK __xl_a, __xl_z;
 
 // extern "C" suppresses C++ name mangling so we know the symbol names for the
 // linker /INCLUDE:symbol pragmas above.
@@ -85,8 +84,9 @@ PIMAGE_TLS_CALLBACK p_thread_callback_dllmain_typical_entry = on_callback;
 #endif  // _WIN64
 }  // extern "C"
 
+// Custom crash code to get a unique entry in crash reports.
 NOINLINE static void CrashOnProcessDetach() {
-  *((int*)0) = 0x356;
+  *static_cast<volatile int*>(0) = 0x356;
 }
 
 // Make DllMain call the listed callbacks.  This way any third parties that are

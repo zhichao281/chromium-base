@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_SEQUENCED_TASKRUNNER_H_
-#define BASE_SEQUENCED_TASKRUNNER_H_
+#ifndef BASE_SEQUENCED_TASK_RUNNER_H_
+#define BASE_SEQUENCED_TASK_RUNNER_H_
+
+#include <memory>
 
 #include "base/base_export.h"
+#include "base/callback.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/task_runner.h"
 
@@ -18,8 +21,8 @@ namespace base {
 //
 // Summary
 // -------
-// Barring delayed/non-nestable tasks, tasks posted will run one by
-// one in FIFO order.
+// Non-nested tasks with the same delay will run one by one in FIFO
+// order.
 //
 // Detailed guarantees
 // -------------------
@@ -36,18 +39,19 @@ namespace base {
 //
 //   - Given two tasks T2 and T1, T2 will start after T1 starts if:
 //
-//       * T2 is posted after T1;
+//       * T2 is posted after T1; and
 //       * T2 has equal or higher delay than T1; and
 //       * T2 is non-nestable or T1 is nestable.
 //
 //   - If T2 will start after T1 starts by the above guarantee, then
-//     T2 will start after T1 finishes if:
+//     T2 will start after T1 finishes and is destroyed if:
 //
 //       * T2 is non-nestable, or
 //       * T1 doesn't call any task-running methods.
 //
 //   - If T2 will start after T1 finishes by the above guarantee, then
-//     all memory changes in T1 will be visible to T2.
+//     all memory changes in T1 and T1's destruction will be visible
+//     to T2.
 //
 //   - If T2 runs nested within T1 via a call to the task-running
 //     method M, then all memory changes in T1 up to the call to M
@@ -107,52 +111,78 @@ class BASE_EXPORT SequencedTaskRunner : public TaskRunner {
   // TODO(akalin): Get rid of the boolean return value for the methods
   // below.
 
-  bool PostNonNestableTask(const tracked_objects::Location& from_here,
-                           const Closure& task);
+  bool PostNonNestableTask(const Location& from_here, OnceClosure task);
 
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const Closure& task,
-      base::TimeDelta delay) = 0;
+  virtual bool PostNonNestableDelayedTask(const Location& from_here,
+                                          OnceClosure task,
+                                          base::TimeDelta delay) = 0;
 
   // Submits a non-nestable task to delete the given object.  Returns
   // true if the object may be deleted at some point in the future,
   // and false if the object definitely will not be deleted.
   template <class T>
-  bool DeleteSoon(const tracked_objects::Location& from_here,
-                  const T* object) {
-    return
-        subtle::DeleteHelperInternal<T, bool>::DeleteViaSequencedTaskRunner(
-            this, from_here, object);
+  bool DeleteSoon(const Location& from_here, const T* object) {
+    return DeleteOrReleaseSoonInternal(from_here, &DeleteHelper<T>::DoDelete,
+                                       object);
   }
 
-  // Submits a non-nestable task to release the given object.  Returns
-  // true if the object may be released at some point in the future,
-  // and false if the object definitely will not be released.
   template <class T>
-  bool ReleaseSoon(const tracked_objects::Location& from_here,
-                   T* object) {
-    return
-        subtle::ReleaseHelperInternal<T, bool>::ReleaseViaSequencedTaskRunner(
-            this, from_here, object);
+  bool DeleteSoon(const Location& from_here, std::unique_ptr<T> object) {
+    return DeleteSoon(from_here, object.release());
+  }
+
+  // Submits a non-nestable task to release the given object.
+  //
+  // ReleaseSoon makes sure that the object it the scoped_refptr points to gets
+  // properly released on the correct thread.
+  // We apply ReleaseSoon to the rvalue as the side-effects can be unclear to
+  // the caller if an lvalue is used. That being so, the scoped_refptr should
+  // always be std::move'd.
+  // Example use:
+  //
+  // scoped_refptr<T> foo_scoped_refptr;
+  // ...
+  // task_runner->ReleaseSoon(std::move(foo_scoped_refptr));
+  template <class T>
+  void ReleaseSoon(const Location& from_here, scoped_refptr<T>&& object) {
+    if (!object)
+      return;
+
+    DeleteOrReleaseSoonInternal(from_here, &ReleaseHelper<T>::DoRelease,
+                                object.release());
   }
 
  protected:
-  virtual ~SequencedTaskRunner() {}
+  ~SequencedTaskRunner() override = default;
 
  private:
-  template <class T, class R> friend class subtle::DeleteHelperInternal;
-  template <class T, class R> friend class subtle::ReleaseHelperInternal;
+  bool DeleteOrReleaseSoonInternal(const Location& from_here,
+                                   void (*deleter)(const void*),
+                                   const void* object);
+};
 
-  bool DeleteSoonInternal(const tracked_objects::Location& from_here,
-                          void(*deleter)(const void*),
-                          const void* object);
+// Sample usage with std::unique_ptr :
+// std::unique_ptr<Foo, base::OnTaskRunnerDeleter> ptr(
+//     new Foo, base::OnTaskRunnerDeleter(my_task_runner));
+//
+// For RefCounted see base::RefCountedDeleteOnSequence.
+struct BASE_EXPORT OnTaskRunnerDeleter {
+  explicit OnTaskRunnerDeleter(scoped_refptr<SequencedTaskRunner> task_runner);
+  ~OnTaskRunnerDeleter();
 
-  bool ReleaseSoonInternal(const tracked_objects::Location& from_here,
-                           void(*releaser)(const void*),
-                           const void* object);
+  OnTaskRunnerDeleter(OnTaskRunnerDeleter&&);
+  OnTaskRunnerDeleter& operator=(OnTaskRunnerDeleter&&);
+
+  // For compatibility with std:: deleters.
+  template <typename T>
+  void operator()(const T* ptr) {
+    if (ptr)
+      task_runner_->DeleteSoon(FROM_HERE, ptr);
+  }
+
+  scoped_refptr<SequencedTaskRunner> task_runner_;
 };
 
 }  // namespace base
 
-#endif  // BASE_SEQUENCED_TASKRUNNER_H_
+#endif  // BASE_SEQUENCED_TASK_RUNNER_H_

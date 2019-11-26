@@ -7,8 +7,8 @@
 
 #include <objbase.h>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/macros.h"
 
 namespace base {
 namespace win {
@@ -50,6 +50,10 @@ class ScopedCoMem {
     if (mem_ptr_)
       CoTaskMemFree(mem_ptr_);
     mem_ptr_ = ptr;
+  }
+
+  T* get() const {
+    return mem_ptr_;
   }
 
  private:

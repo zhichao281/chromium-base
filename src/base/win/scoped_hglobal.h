@@ -6,8 +6,9 @@
 #define BASE_WIN_SCOPED_HGLOBAL_H_
 
 #include <windows.h>
+#include <stddef.h>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 
 namespace base {
 namespace win {
@@ -17,23 +18,23 @@ template<class T>
 class ScopedHGlobal {
  public:
   explicit ScopedHGlobal(HGLOBAL glob) : glob_(glob) {
-    data_ = static_cast<T*>(GlobalLock(glob_));
+    data_ = static_cast<T>(GlobalLock(glob_));
   }
   ~ScopedHGlobal() {
     GlobalUnlock(glob_);
   }
 
-  T* get() { return data_; }
+  T get() { return data_; }
 
   size_t Size() const { return GlobalSize(glob_); }
 
-  T* operator->() const  {
+  T operator->() const {
     assert(data_ != 0);
     return data_;
   }
 
-  T* release() {
-    T* data = data_;
+  T release() {
+    T data = data_;
     data_ = NULL;
     return data;
   }
@@ -41,7 +42,7 @@ class ScopedHGlobal {
  private:
   HGLOBAL glob_;
 
-  T* data_;
+  T data_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedHGlobal);
 };

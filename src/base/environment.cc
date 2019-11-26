@@ -4,25 +4,25 @@
 
 #include "base/environment.h"
 
-#if defined(OS_POSIX)
-#include <stdlib.h>
-#elif defined(OS_WIN)
-#include <windows.h>
-#endif
-
-#include "base/string_util.h"
+#include "base/memory/ptr_util.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 
 #if defined(OS_WIN)
-#include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include <windows.h>
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#include <stdlib.h>
 #endif
+
+namespace base {
 
 namespace {
 
-class EnvironmentImpl : public base::Environment {
+class EnvironmentImpl : public Environment {
  public:
-  virtual bool GetVar(const char* variable_name,
-                      std::string* result) OVERRIDE {
+  bool GetVar(StringPiece variable_name, std::string* result) override {
     if (GetVarImpl(variable_name, result))
       return true;
 
@@ -32,80 +32,76 @@ class EnvironmentImpl : public base::Environment {
     // I.e. HTTP_PROXY may be http_proxy for some users/systems.
     char first_char = variable_name[0];
     std::string alternate_case_var;
-    if (first_char >= 'a' && first_char <= 'z')
-      alternate_case_var = StringToUpperASCII(std::string(variable_name));
-    else if (first_char >= 'A' && first_char <= 'Z')
-      alternate_case_var = StringToLowerASCII(std::string(variable_name));
+    if (IsAsciiLower(first_char))
+      alternate_case_var = ToUpperASCII(variable_name);
+    else if (IsAsciiUpper(first_char))
+      alternate_case_var = ToLowerASCII(variable_name);
     else
       return false;
-    return GetVarImpl(alternate_case_var.c_str(), result);
+    return GetVarImpl(alternate_case_var, result);
   }
 
-  virtual bool SetVar(const char* variable_name,
-                      const std::string& new_value) OVERRIDE {
+  bool SetVar(StringPiece variable_name,
+              const std::string& new_value) override {
     return SetVarImpl(variable_name, new_value);
   }
 
-  virtual bool UnSetVar(const char* variable_name) OVERRIDE {
+  bool UnSetVar(StringPiece variable_name) override {
     return UnSetVarImpl(variable_name);
   }
 
  private:
-  bool GetVarImpl(const char* variable_name, std::string* result) {
-#if defined(OS_POSIX)
-    const char* env_value = getenv(variable_name);
+  bool GetVarImpl(StringPiece variable_name, std::string* result) {
+#if defined(OS_WIN)
+    DWORD value_length =
+        ::GetEnvironmentVariable(UTF8ToWide(variable_name).c_str(), nullptr, 0);
+    if (value_length == 0)
+      return false;
+    if (result) {
+      std::unique_ptr<wchar_t[]> value(new wchar_t[value_length]);
+      ::GetEnvironmentVariable(UTF8ToWide(variable_name).c_str(), value.get(),
+                               value_length);
+      *result = WideToUTF8(value.get());
+    }
+    return true;
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+    const char* env_value = getenv(variable_name.data());
     if (!env_value)
       return false;
     // Note that the variable may be defined but empty.
     if (result)
       *result = env_value;
     return true;
-#elif defined(OS_WIN)
-    DWORD value_length = ::GetEnvironmentVariable(
-        UTF8ToWide(variable_name).c_str(), NULL, 0);
-    if (value_length == 0)
-      return false;
-    if (result) {
-      scoped_array<wchar_t> value(new wchar_t[value_length]);
-      ::GetEnvironmentVariable(UTF8ToWide(variable_name).c_str(), value.get(),
-                               value_length);
-      *result = WideToUTF8(value.get());
-    }
-    return true;
-#else
-#error need to port
 #endif
   }
 
-  bool SetVarImpl(const char* variable_name, const std::string& new_value) {
-#if defined(OS_POSIX)
-    // On success, zero is returned.
-    return !setenv(variable_name, new_value.c_str(), 1);
-#elif defined(OS_WIN)
+  bool SetVarImpl(StringPiece variable_name, const std::string& new_value) {
+#if defined(OS_WIN)
     // On success, a nonzero value is returned.
     return !!SetEnvironmentVariable(UTF8ToWide(variable_name).c_str(),
                                     UTF8ToWide(new_value).c_str());
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+    // On success, zero is returned.
+    return !setenv(variable_name.data(), new_value.c_str(), 1);
 #endif
   }
 
-  bool UnSetVarImpl(const char* variable_name) {
-#if defined(OS_POSIX)
-    // On success, zero is returned.
-    return !unsetenv(variable_name);
-#elif defined(OS_WIN)
+  bool UnSetVarImpl(StringPiece variable_name) {
+#if defined(OS_WIN)
     // On success, a nonzero value is returned.
-    return !!SetEnvironmentVariable(UTF8ToWide(variable_name).c_str(), NULL);
+    return !!SetEnvironmentVariable(UTF8ToWide(variable_name).c_str(), nullptr);
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+    // On success, zero is returned.
+    return !unsetenv(variable_name.data());
 #endif
   }
 };
 
 }  // namespace
 
-namespace base {
-
 namespace env_vars {
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 // On Posix systems, this variable contains the location of the user's home
 // directory. (e.g, /home/username/).
 const char kHome[] = "HOME";
@@ -113,15 +109,15 @@ const char kHome[] = "HOME";
 
 }  // namespace env_vars
 
-Environment::~Environment() {}
+Environment::~Environment() = default;
 
 // static
-Environment* Environment::Create() {
-  return new EnvironmentImpl();
+std::unique_ptr<Environment> Environment::Create() {
+  return std::make_unique<EnvironmentImpl>();
 }
 
-bool Environment::HasVar(const char* variable_name) {
-  return GetVar(variable_name, NULL);
+bool Environment::HasVar(StringPiece variable_name) {
+  return GetVar(variable_name, nullptr);
 }
 
 }  // namespace base

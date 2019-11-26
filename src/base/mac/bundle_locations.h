@@ -6,18 +6,18 @@
 #define BASE_MAC_BUNDLE_LOCATIONS_H_
 
 #include "base/base_export.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 
 #if defined(__OBJC__)
 #import <Foundation/Foundation.h>
 #else  // __OBJC__
 class NSBundle;
-class NSString;
 #endif  // __OBJC__
+
+namespace base {
 
 class FilePath;
 
-namespace base {
 namespace mac {
 
 // This file provides several functions to explicitly request the various

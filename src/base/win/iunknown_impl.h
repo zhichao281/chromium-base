@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,8 @@
 #define BASE_WIN_IUNKNOWN_IMPL_H_
 
 #include <unknwn.h>
-#include <atomic>
 
+#include "base/atomic_ref_count.h"
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
 
@@ -19,17 +19,17 @@ class BASE_EXPORT IUnknownImpl : public IUnknown {
  public:
   IUnknownImpl();
 
-  virtual ULONG STDMETHODCALLTYPE AddRef() OVERRIDE;
-  virtual ULONG STDMETHODCALLTYPE Release() OVERRIDE;
+  ULONG STDMETHODCALLTYPE AddRef() override;
+  ULONG STDMETHODCALLTYPE Release() override;
 
   // Subclasses should extend this to return any interfaces they provide.
-  virtual STDMETHODIMP QueryInterface(REFIID riid, void** ppv) OVERRIDE;
+  STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
 
  protected:
   virtual ~IUnknownImpl();
 
  private:
-   std::atomic<int> ref_count_ = 0;
+  AtomicRefCount ref_count_;
 };
 
 }  // namespace win

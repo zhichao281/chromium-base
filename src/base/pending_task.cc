@@ -1,34 +1,28 @@
-﻿// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/pending_task.h"
 
+
 namespace base {
 
-PendingTask::PendingTask(const tracked_objects::Location& posted_from, const base::Closure& task)
-  : task(task),
-    posted_from(posted_from),
-    sequence_num(0),
-    nestable(true) {
+PendingTask::PendingTask() = default;
 
-  delayed_run_time = TimeTicks();
-  time_posted = TimeTicks();
-}
-
-PendingTask::PendingTask(const tracked_objects::Location& posted_from, const base::Closure& task,
-                         TimeTicks delayed_run_time, bool nestable)
-    : task(task),
+PendingTask::PendingTask(const Location& posted_from,
+                         OnceClosure task,
+                         TimeTicks delayed_run_time,
+                         Nestable nestable)
+    : task(std::move(task)),
       posted_from(posted_from),
-      sequence_num(0),
-      nestable(nestable) {
+      delayed_run_time(delayed_run_time),
+      nestable(nestable) {}
 
-  delayed_run_time = TimeTicks();
-  time_posted = TimeTicks();
-}
+PendingTask::PendingTask(PendingTask&& other) = default;
 
-PendingTask::~PendingTask() {
-}
+PendingTask::~PendingTask() = default;
+
+PendingTask& PendingTask::operator=(PendingTask&& other) = default;
 
 bool PendingTask::operator<(const PendingTask& other) const {
   // Since the top of a priority queue is defined as the "greatest" element, we
@@ -44,10 +38,6 @@ bool PendingTask::operator<(const PendingTask& other) const {
   // If the times happen to match, then we use the sequence number to decide.
   // Compare the difference to support integer roll-over.
   return (sequence_num - other.sequence_num) > 0;
-}
-
-void TaskQueue::Swap(TaskQueue* queue) {
-  c.swap(queue->c);  // Calls std::deque::swap.
 }
 
 }  // namespace base

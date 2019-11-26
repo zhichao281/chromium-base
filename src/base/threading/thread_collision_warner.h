@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,11 @@
 #define BASE_THREADING_THREAD_COLLISION_WARNER_H_
 
 #include <memory>
-#include <atomic>
 
+#include "base/atomicops.h"
 #include "base/base_export.h"
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 
 // A helper class alongside macros to be used to verify assumptions about thread
 // safety of a class.
@@ -133,19 +133,19 @@ namespace base {
 // used. During the unit tests is used another class that doesn't "DCHECK"
 // in case of collision (check thread_collision_warner_unittests.cc)
 struct BASE_EXPORT AsserterBase {
-  virtual ~AsserterBase() {}
+  virtual ~AsserterBase() = default;
   virtual void warn() = 0;
 };
 
 struct BASE_EXPORT DCheckAsserter : public AsserterBase {
-  virtual ~DCheckAsserter() {}
-  virtual void warn() OVERRIDE;
+  ~DCheckAsserter() override = default;
+  void warn() override;
 };
 
 class BASE_EXPORT ThreadCollisionWarner {
  public:
   // The parameter asserter is there only for test purpose
-  ThreadCollisionWarner(AsserterBase* asserter = new DCheckAsserter())
+  explicit ThreadCollisionWarner(AsserterBase* asserter = new DCheckAsserter())
       : valid_thread_id_(0),
         counter_(0),
         asserter_(asserter) {}
@@ -166,7 +166,7 @@ class BASE_EXPORT ThreadCollisionWarner {
       warner_->EnterSelf();
     }
 
-    ~Check() {}
+    ~Check() = default;
 
    private:
     ThreadCollisionWarner* warner_;
@@ -227,17 +227,15 @@ class BASE_EXPORT ThreadCollisionWarner {
 
   // This stores the thread id that is inside the critical section, if the
   // value is 0 then no thread is inside.
-  std::atomic<int32> valid_thread_id_ = 0;
+  volatile subtle::Atomic32 valid_thread_id_;
 
   // Counter to trace how many time a critical section was "pinned"
   // (when allowed) in order to unpin it when counter_ reaches 0.
-  std::atomic<int32> counter_ = 0;
+  volatile subtle::Atomic32 counter_;
 
   // Here only for class unit tests purpose, during the test I need to not
   // DCHECK but notify the collision with something else.
   AsserterBase* asserter_;
-
-  static int kInvalidThreadId;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadCollisionWarner);
 };

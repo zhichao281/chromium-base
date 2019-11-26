@@ -13,7 +13,7 @@
 #include <windows.h>
 
 #include "base/base_export.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace base {
 namespace win {
@@ -37,18 +37,17 @@ BASE_EXPORT int CallExceptionFilter(EXCEPTION_POINTERS* info);
 // Initializes the WNDCLASSEX structure |*class_out| to be passed to
 // RegisterClassEx() making sure that it is associated with the module
 // containing the window procedure.
-BASE_EXPORT void InitializeWindowClass(
-    const char16* class_name,
-    WNDPROC window_proc,
-    UINT style,
-    int class_extra,
-    int window_extra,
-    HCURSOR cursor,
-    HBRUSH background,
-    const char16* menu_name,
-    HICON large_icon,
-    HICON small_icon,
-    WNDCLASSEX* class_out);
+BASE_EXPORT void InitializeWindowClass(const char16* class_name,
+                                       WNDPROC window_proc,
+                                       UINT style,
+                                       int class_extra,
+                                       int window_extra,
+                                       HCURSOR cursor,
+                                       HBRUSH background,
+                                       const char16* menu_name,
+                                       HICON large_icon,
+                                       HICON small_icon,
+                                       WNDCLASSEX* class_out);
 
 // Wrapper that supplies a standard exception frame for the provided WindowProc.
 // The normal usage is something like this:
@@ -69,8 +68,8 @@ BASE_EXPORT void InitializeWindowClass(
 //   CreateWindowW(class_name, window_name, ...
 //
 template <WNDPROC proc>
-LRESULT CALLBACK WrappedWindowProc(HWND hwnd, UINT message,
-                                   WPARAM wparam, LPARAM lparam) {
+LRESULT CALLBACK
+WrappedWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
   LRESULT rv = 0;
   __try {
     rv = proc(hwnd, message, wparam, lparam);

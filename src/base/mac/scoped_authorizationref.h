@@ -7,11 +7,11 @@
 
 #include <Security/Authorization.h>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 
 // ScopedAuthorizationRef maintains ownership of an AuthorizationRef.  It is
-// patterned after the scoped_ptr interface.
+// patterned after the unique_ptr interface.
 
 namespace base {
 namespace mac {
@@ -49,9 +49,7 @@ class ScopedAuthorizationRef {
     return authorization_;
   }
 
-  AuthorizationRef* operator&() {
-    return &authorization_;
-  }
+  AuthorizationRef* get_pointer() { return &authorization_; }
 
   AuthorizationRef get() const {
     return authorization_;
@@ -63,10 +61,9 @@ class ScopedAuthorizationRef {
     authorization_ = temp;
   }
 
-  // ScopedAuthorizationRef::release() is like scoped_ptr<>::release.  It is
-  // NOT a wrapper for AuthorizationFree().  To force a
-  // ScopedAuthorizationRef object to call AuthorizationFree(), use
-  // ScopedAuthorizationRef::reset().
+  // ScopedAuthorizationRef::release() is like std::unique_ptr<>::release. It is
+  // NOT a wrapper for AuthorizationFree(). To force a ScopedAuthorizationRef
+  // object to call AuthorizationFree(), use ScopedAuthorizationRef::reset().
   AuthorizationRef release() WARN_UNUSED_RESULT {
     AuthorizationRef temp = authorization_;
     authorization_ = NULL;

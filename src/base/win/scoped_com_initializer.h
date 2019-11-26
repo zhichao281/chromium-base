@@ -5,103 +5,49 @@
 #ifndef BASE_WIN_SCOPED_COM_INITIALIZER_H_
 #define BASE_WIN_SCOPED_COM_INITIALIZER_H_
 
-#include "base/basictypes.h"
-#include "base/logging.h"
-#include "build/build_config.h"
-
-#if defined(OS_WIN)
-
 #include <objbase.h>
+
+#include "base/base_export.h"
+#include "base/macros.h"
+#include "base/threading/thread_checker.h"
+#include "base/win/scoped_windows_thread_environment.h"
 
 namespace base {
 namespace win {
 
 // Initializes COM in the constructor (STA or MTA), and uninitializes COM in the
 // destructor.
-class ScopedCOMInitializer {
+//
+// WARNING: This should only be used once per thread, ideally scoped to a
+// similar lifetime as the thread itself.  You should not be using this in
+// random utility functions that make COM calls -- instead ensure these
+// functions are running on a COM-supporting thread!
+class BASE_EXPORT ScopedCOMInitializer : public ScopedWindowsThreadEnvironment {
  public:
   // Enum value provided to initialize the thread as an MTA instead of STA.
   enum SelectMTA { kMTA };
 
   // Constructor for STA initialization.
-  ScopedCOMInitializer() {
-    Initialize(COINIT_APARTMENTTHREADED);
-  }
+  ScopedCOMInitializer();
 
   // Constructor for MTA initialization.
-  explicit ScopedCOMInitializer(SelectMTA mta) {
-    Initialize(COINIT_MULTITHREADED);
-  }
+  explicit ScopedCOMInitializer(SelectMTA mta);
 
-  ~ScopedCOMInitializer() {
-#ifndef NDEBUG
-    // Using the windows API directly to avoid dependency on platform_thread.
-    DCHECK_EQ(GetCurrentThreadId(), thread_id_);
-#endif
-    if (SUCCEEDED(hr_))
-      CoUninitialize();
-  }
+  ~ScopedCOMInitializer() override;
 
-  bool succeeded() const { return SUCCEEDED(hr_); }
+  // ScopedWindowsThreadEnvironment:
+  bool Succeeded() const override;
 
  private:
-  void Initialize(COINIT init) {
-#ifndef NDEBUG
-    thread_id_ = GetCurrentThreadId();
-#endif
-    hr_ = CoInitializeEx(NULL, init);
-#ifndef NDEBUG
-    switch (hr_) {
-      case S_FALSE:
-        LOG(ERROR) << "Multiple CoInitialize() called for thread "
-                   << thread_id_;
-        break;
-      case RPC_E_CHANGED_MODE:
-        DCHECK(false) << "Invalid COM thread model change";
-        break;
-      default:
-        break;
-    }
-#endif
-  }
+  void Initialize(COINIT init);
 
   HRESULT hr_;
-#ifndef NDEBUG
-  // In debug builds we use this variable to catch a potential bug where a
-  // ScopedCOMInitializer instance is deleted on a different thread than it
-  // was initially created on.  If that ever happens it can have bad
-  // consequences and the cause can be tricky to track down.
-  DWORD thread_id_;
-#endif
+  THREAD_CHECKER(thread_checker_);
 
   DISALLOW_COPY_AND_ASSIGN(ScopedCOMInitializer);
 };
 
 }  // namespace win
 }  // namespace base
-
-#else
-
-namespace base {
-namespace win {
-
-// Do-nothing class for other platforms.
-class ScopedCOMInitializer {
- public:
-  enum SelectMTA { kMTA };
-  ScopedCOMInitializer() {}
-  explicit ScopedCOMInitializer(SelectMTA mta) {}
-  ~ScopedCOMInitializer() {}
-
-  bool succeeded() const { return true; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ScopedCOMInitializer);
-};
-
-}  // namespace win
-}  // namespace base
-
-#endif
 
 #endif  // BASE_WIN_SCOPED_COM_INITIALIZER_H_

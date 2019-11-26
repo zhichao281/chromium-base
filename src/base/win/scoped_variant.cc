@@ -3,16 +3,22 @@
 // found in the LICENSE file.
 
 #include "base/win/scoped_variant.h"
+
 #include "base/logging.h"
 
 namespace base {
 namespace win {
 
 // Global, const instance of an empty variant.
-const VARIANT ScopedVariant::kEmptyVariant = { VT_EMPTY };
+const VARIANT ScopedVariant::kEmptyVariant = {{{VT_EMPTY}}};
+
+ScopedVariant::ScopedVariant(ScopedVariant&& var) {
+  var_.vt = VT_EMPTY;
+  Reset(var.Release());
+}
 
 ScopedVariant::~ScopedVariant() {
-  COMPILE_ASSERT(sizeof(ScopedVariant) == sizeof(VARIANT), ScopedVariantSize);
+  static_assert(sizeof(ScopedVariant) == sizeof(VARIANT), "ScopedVariantSize");
   ::VariantClear(&var_);
 }
 
@@ -28,7 +34,10 @@ ScopedVariant::ScopedVariant(const wchar_t* str, UINT length) {
 
 ScopedVariant::ScopedVariant(int value, VARTYPE vt) {
   var_.vt = vt;
-  var_.lVal = value;
+  if (vt == VT_BOOL)
+    var_.boolVal = value ? VARIANT_TRUE : VARIANT_FALSE;
+  else
+    var_.lVal = value;
 }
 
 ScopedVariant::ScopedVariant(double value, VARTYPE vt) {
@@ -82,7 +91,7 @@ VARIANT* ScopedVariant::Receive() {
 }
 
 VARIANT ScopedVariant::Copy() const {
-  VARIANT ret = { VT_EMPTY };
+  VARIANT ret = {{{VT_EMPTY}}};
   ::VariantCopy(&ret, &var_);
   return ret;
 }
@@ -91,24 +100,18 @@ int ScopedVariant::Compare(const VARIANT& var, bool ignore_case) const {
   ULONG flags = ignore_case ? NORM_IGNORECASE : 0;
   HRESULT hr = ::VarCmp(const_cast<VARIANT*>(&var_), const_cast<VARIANT*>(&var),
                         LOCALE_USER_DEFAULT, flags);
-  int ret = 0;
+  DCHECK(SUCCEEDED(hr) && hr != VARCMP_NULL)
+      << "unsupported variant comparison: " << var_.vt << " and " << var.vt;
 
   switch (hr) {
     case VARCMP_LT:
-      ret = -1;
-      break;
-
+      return -1;
     case VARCMP_GT:
     case VARCMP_NULL:
-      ret = 1;
-      break;
-
+      return 1;
     default:
-      // Equal.
-      break;
+      return 0;
   }
-
-  return ret;
 }
 
 void ScopedVariant::Set(const wchar_t* str) {
@@ -117,49 +120,49 @@ void ScopedVariant::Set(const wchar_t* str) {
   var_.bstrVal = ::SysAllocString(str);
 }
 
-void ScopedVariant::Set(int8 i8) {
+void ScopedVariant::Set(int8_t i8) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_I1;
   var_.cVal = i8;
 }
 
-void ScopedVariant::Set(uint8 ui8) {
+void ScopedVariant::Set(uint8_t ui8) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_UI1;
   var_.bVal = ui8;
 }
 
-void ScopedVariant::Set(int16 i16) {
+void ScopedVariant::Set(int16_t i16) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_I2;
   var_.iVal = i16;
 }
 
-void ScopedVariant::Set(uint16 ui16) {
+void ScopedVariant::Set(uint16_t ui16) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_UI2;
   var_.uiVal = ui16;
 }
 
-void ScopedVariant::Set(int32 i32) {
+void ScopedVariant::Set(int32_t i32) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_I4;
   var_.lVal = i32;
 }
 
-void ScopedVariant::Set(uint32 ui32) {
+void ScopedVariant::Set(uint32_t ui32) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_UI4;
   var_.ulVal = ui32;
 }
 
-void ScopedVariant::Set(int64 i64) {
+void ScopedVariant::Set(int64_t i64) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_I8;
   var_.llVal = i64;
 }
 
-void ScopedVariant::Set(uint64 ui64) {
+void ScopedVariant::Set(uint64_t ui64) {
   DCHECK(!IsLeakableVarType(var_.vt)) << "leaking variant: " << var_.vt;
   var_.vt = VT_UI8;
   var_.ullVal = ui64;
@@ -222,6 +225,12 @@ void ScopedVariant::Set(const VARIANT& var) {
     DLOG(ERROR) << "VariantCopy failed";
     var_.vt = VT_EMPTY;
   }
+}
+
+ScopedVariant& ScopedVariant::operator=(ScopedVariant&& var) {
+  if (var.ptr() != &var_)
+    Reset(var.Release());
+  return *this;
 }
 
 ScopedVariant& ScopedVariant::operator=(const VARIANT& var) {

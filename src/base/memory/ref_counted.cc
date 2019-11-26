@@ -1,98 +1,101 @@
-﻿// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <atomic>
-
 #include "base/memory/ref_counted.h"
-#include "base/logging.h"
+
+#include <limits>
+#include <type_traits>
+
 #include "base/threading/thread_collision_warner.h"
 
 namespace base {
+namespace {
+
+#if DCHECK_IS_ON()
+std::atomic_int g_cross_thread_ref_count_access_allow_count(0);
+#endif
+
+}  // namespace
 
 namespace subtle {
 
-RefCountedBase::RefCountedBase()
-    : ref_count_(0)
-#ifndef NDEBUG
-    , in_dtor_(false)
-#endif
-    {
-}
-
-RefCountedBase::~RefCountedBase() {
-#ifndef NDEBUG
-  DCHECK(in_dtor_) << "RefCounted object deleted without calling Release()";
-#endif
-}
-
-void RefCountedBase::AddRef() const {
-  // TODO(maruel): Add back once it doesn't assert 500 times/sec.
-  // Current thread books the critical section "AddRelease" without release it.
-  // DFAKE_SCOPED_LOCK_THREAD_LOCKED(add_release_);
-#ifndef NDEBUG
-  DCHECK(!in_dtor_);
-#endif
-  ++ref_count_;
-}
-
-bool RefCountedBase::Release() const {
-  // TODO(maruel): Add back once it doesn't assert 500 times/sec.
-  // Current thread books the critical section "AddRelease" without release it.
-  // DFAKE_SCOPED_LOCK_THREAD_LOCKED(add_release_);
-#ifndef NDEBUG
-  DCHECK(!in_dtor_);
-#endif
-  if (--ref_count_ == 0) {
-#ifndef NDEBUG
-    in_dtor_ = true;
-#endif
-    return true;
-  }
-  return false;
-}
-
 bool RefCountedThreadSafeBase::HasOneRef() const {
-  auto me = const_cast<RefCountedThreadSafeBase*>(this);
-  return me->ref_count_.load(std::memory_order_acquire) == 1;
+  return ref_count_.IsOne();
 }
 
-RefCountedThreadSafeBase::RefCountedThreadSafeBase() {
-#ifndef NDEBUG
-  in_dtor_ = false;
-#endif
+bool RefCountedThreadSafeBase::HasAtLeastOneRef() const {
+  return !ref_count_.IsZero();
 }
 
+#if DCHECK_IS_ON()
 RefCountedThreadSafeBase::~RefCountedThreadSafeBase() {
-#ifndef NDEBUG
   DCHECK(in_dtor_) << "RefCountedThreadSafe object deleted without "
                       "calling Release()";
+}
 #endif
+
+// For security and correctness, we check the arithmetic on ref counts.
+//
+// In an attempt to avoid binary bloat (from inlining the `CHECK`), we define
+// these functions out-of-line. However, compilers are wily. Further testing may
+// show that `NOINLINE` helps or hurts.
+//
+#if defined(ARCH_CPU_64_BITS)
+void RefCountedBase::AddRefImpl() const {
+  // An attacker could induce use-after-free bugs, and potentially exploit them,
+  // by creating so many references to a ref-counted object that the reference
+  // count overflows. On 32-bit architectures, there is not enough address space
+  // to succeed. But on 64-bit architectures, it might indeed be possible.
+  // Therefore, we can elide the check for arithmetic overflow on 32-bit, but we
+  // must check on 64-bit.
+  //
+  // Make sure the addition didn't wrap back around to 0. This form of check
+  // works because we assert that `ref_count_` is an unsigned integer type.
+  CHECK(++ref_count_ != 0);
 }
 
-void RefCountedThreadSafeBase::AddRef() const {
-#ifndef NDEBUG
-  DCHECK(!in_dtor_);
-#endif
-  const_cast<RefCountedThreadSafeBase*>(this)->ref_count_.fetch_add(1);
+void RefCountedBase::ReleaseImpl() const {
+  // Make sure the subtraction didn't wrap back around from 0 to the max value.
+  // That could cause memory leaks, and may induce application-semantic
+  // correctness or safety bugs. (E.g. what if we really needed that object to
+  // be destroyed at the right time?)
+  //
+  // Note that unlike with overflow, underflow could also happen on 32-bit
+  // architectures. Arguably, we should do this check on32-bit machines too.
+  CHECK(--ref_count_ != std::numeric_limits<decltype(ref_count_)>::max());
 }
+#endif
 
+#if !defined(ARCH_CPU_X86_FAMILY)
 bool RefCountedThreadSafeBase::Release() const {
-  auto me = const_cast<RefCountedThreadSafeBase*>(this);
-#ifndef NDEBUG
-  DCHECK(!in_dtor_);
-  DCHECK(!(me->ref_count_.load(std::memory_order_acquire) == 0));
+  return ReleaseImpl();
+}
+void RefCountedThreadSafeBase::AddRef() const {
+  AddRefImpl();
+}
+void RefCountedThreadSafeBase::AddRefWithCheck() const {
+  AddRefWithCheckImpl();
+}
 #endif
 
-  if (!(me->ref_count_.fetch_add(-1, std::memory_order_consume) != 0)) {
-#ifndef NDEBUG
-    in_dtor_ = true;
-#endif
-    return true;
-  }
-  return false;
+#if DCHECK_IS_ON()
+bool RefCountedBase::CalledOnValidSequence() const {
+  return sequence_checker_.CalledOnValidSequence() ||
+         g_cross_thread_ref_count_access_allow_count.load() != 0;
 }
+#endif
 
 }  // namespace subtle
+
+#if DCHECK_IS_ON()
+ScopedAllowCrossThreadRefCountAccess::ScopedAllowCrossThreadRefCountAccess() {
+  ++g_cross_thread_ref_count_access_allow_count;
+}
+
+ScopedAllowCrossThreadRefCountAccess::~ScopedAllowCrossThreadRefCountAccess() {
+  --g_cross_thread_ref_count_access_allow_count;
+}
+#endif
 
 }  // namespace base
